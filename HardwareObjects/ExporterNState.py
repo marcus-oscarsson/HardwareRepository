@@ -29,6 +29,7 @@ Example xml file:
 """
 from gevent import Timeout, sleep
 from HardwareRepository.HardwareObjects.abstract.AbstractNState import AbstractNState
+from HardwareRepository.BaseHardwareObjects import HardwareObjectState
 from HardwareRepository.Command.Exporter import Exporter
 from HardwareRepository.Command.exporter.ExporterStates import ExporterStates
 
