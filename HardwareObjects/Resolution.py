@@ -98,17 +98,18 @@ class Resolution(AbstractMotor):
         )
         return self._limits
 
-    def _set_value(self, value, wait=False, timeout=None):
+    def _set_value(self, value, timeout=None):
         """Move resolution to absolute value. Wait the move to finish.
         Args:
             value (float): target value [Å]
-            wait (bool): optional - wait until motor movement finished.
-            timeout (float): optional - timeout [s].
+            timeout (float): optional - timeout [s],
+                             If timeout == 0: return at once and do not wait (default);
+                             if timeout is None: wait forever.
         """
         distance = self.resolution_to_distance(value)
         msg = "Move resolution to {} ({} mm)".format(value, distance)
         logging.getLogger().info(msg)
-        self._hwr_detector.distance.set_value(distance, wait=wait, timeout=timeout)
+        self._hwr_detector.distance.set_value(distance, timeout=timeout)
 
     def stop(self):
         """Stop the distance motor movement"""
