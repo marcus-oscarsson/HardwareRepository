@@ -477,6 +477,7 @@ class ESRFMultiCollect(AbstractMultiCollect, HardwareObject):
     def data_collection_end_hook(self, data_collect_parameters):
         self._metadataClient.end(data_collect_parameters)
 
+    @task
     def prepare_oscillation(
         self, start, osc_range, exptime, number_of_images, shutterless, npass
     ):
@@ -508,20 +509,21 @@ class ESRFMultiCollect(AbstractMultiCollect, HardwareObject):
         self.close_fast_shutter()
 
     @task
-    def do_oscillation(self, start, end, exptime, number_of_images, shutterless, npass):
+    def do_oscillation(self, start, end, exptime, number_of_images, shutterless, npass, first_frame):
         still = math.fabs(end - start) < 1e-4
 
         if shutterless:
-            exptime = (exptime + self._detector.get_deadtime()) * number_of_images
-            # only do this once per collect
-            # make oscillation an asynchronous task => do not wait here
-            if still:
-                self.oscillation_task = self.no_oscillation(exptime, wait=False)
-            else:
-                oscillation_task = self.oscil(start, end, exptime, 1, wait=False)
+            if first_frame:
+                exptime = (exptime + self._detector.get_deadtime()) * number_of_images
+                # only do this once per collect
+                # make oscillation an asynchronous task => do not wait here
+                if still:
+                    self.oscillation_task = self.no_oscillation(exptime, wait=False)
+                else:
+                    self.oscillation_task = self.oscil(start, end, exptime, 1, wait=False)
 
-            if oscillation_task.ready():
-                oscillation_task.get()
+            if self.oscillation_task.ready():
+                self.oscillation_task.get()
         else:
             if still:
                 self.no_oscillation(exptime)
@@ -613,7 +615,8 @@ class ESRFMultiCollect(AbstractMultiCollect, HardwareObject):
             self.execute_command("adjust_gains")
         except AttributeError:
             pass
-
+    
+    @task
     def prepare_acquisition(
         self,
         take_dark,
@@ -638,6 +641,7 @@ class ESRFMultiCollect(AbstractMultiCollect, HardwareObject):
             trigger_mode,
         )
 
+    @task
     def set_detector_filenames(
         self, frame_number, start, filename, jpeg_full_path, jpeg_thumbnail_full_path
     ):
@@ -648,10 +652,12 @@ class ESRFMultiCollect(AbstractMultiCollect, HardwareObject):
     def stop_oscillation(self):
         pass
 
+    @task
     def start_acquisition(self, exptime, npass, first_frame, shutterless):
         if first_frame and shutterless:
             return self._detector.start_acquisition()
 
+    @task
     def write_image(self, last_frame):
         if last_frame:
             return self._detector.wait_ready()
