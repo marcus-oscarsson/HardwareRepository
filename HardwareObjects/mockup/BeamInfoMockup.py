@@ -97,9 +97,6 @@ class BeamInfoMockup(AbstractBeam):
         _i = self.evaluate_beam_info()
         shape = "ELIPTICAL" if _i["shape"] == "ellipse" else "RECTANGULAR"
 
-        import pdb
-        pdb.set_trace()
-
         return (
             _i["size_x"],
             _i["size_y"],
@@ -119,7 +116,7 @@ class BeamInfoMockup(AbstractBeam):
         """
         return {
             "type": ["aperture"],
-            "values": self.aperture_hwobj._position_list
+            "values": self.aperture_hwobj._diameter_size_list
         }
 
     def get_beam_shape(self):
