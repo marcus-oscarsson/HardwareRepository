@@ -65,7 +65,12 @@ class MotorMockup(AbstractMotor):
         except BaseException:
             limits = DEFAULT_LIMITS
 
-        self._nominal_limits = limits
+        self.set_limits(limits)
+
+        try:
+            self.set_value(float(self.getProperty("default_position")))
+        except BaseException:
+            self.set_value(DEFAULT_POSITION)
 
         self._set_value(float(self.getProperty("start_position", DEFAULT_POSITION)))
         self.update_state(self.STATES.READY)
@@ -126,9 +131,7 @@ class MotorMockup(AbstractMotor):
                              If timeout == 0: return at once and do not wait;
         """
         self.update_state(self.STATES.BUSY)
+        self.__move_task = gevent.spawn(self._move_task, value)
 
         if timeout is None:
-            self._actuator_set_value(value)
-            self.update_state(self.STATES.READY)
-        else:
-            self.__move_task = gevent.spawn(self._move_task, value)
+            self.__move_task.get()
