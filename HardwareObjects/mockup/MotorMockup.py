@@ -127,7 +127,7 @@ class MotorMockup(AbstractMotor):
         """
         self.update_state(self.STATES.BUSY)
 
-        if timeout == 0:
+        if timeout is None:
             self._actuator_set_value(value)
             self.update_state(self.STATES.READY)
         else:
