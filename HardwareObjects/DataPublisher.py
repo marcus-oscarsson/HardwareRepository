@@ -28,35 +28,56 @@ from HardwareRepository.BaseHardwareObjects import HardwareObject
 
 @unique
 class PlotType(Enum):
+    """
+    Defines defualt plot
+    """
     SCATTER = "scatter"
 
 
 class PlotDim(Enum):
+    """
+    Defines data dimension
+    """
     ONE_D = 1
     TWO_D = 2
 
 
 class DataType(Enum):
+    """
+    Defines avialable data types
+    """
     FLOAT = "float"
 
 
 class FrameType(Enum):
+    """
+    Enum defining the message frame types
+    """
     DATA = "data"
     START = "start"
     STOP = "stop"
 
 
 def one_d_data(x, y):
+    """
+    Convenience function for creating x, y data
+    """
     return {"x": x, "y": y}
 
+def two_d_data(x, y):
+    """
+    Convenience function for creating x, y, z data
+    """
+    return {"x": x, "y": y, "z": z}
 
-class DataPublisherRegistry(HardwareObject):
+
+class DataPublisher(HardwareObject):
     """
     DataPublisher handles data publishing
     """
 
     def __init__(self, name):
-        super(DataPublisherRegistry, self).__init__(name)
+        super(DataPublisher, self).__init__(name)
         self._r = None
         self._subsribe_task = None
 
@@ -64,7 +85,7 @@ class DataPublisherRegistry(HardwareObject):
         """
         FWK2 Init method
         """
-        super(DataPublisherRegistry, self).init()
+        super(DataPublisher, self).init()
 
         rhost = self.getProperty("host", "localhost")
         rport = self.getProperty("port", 6379)
@@ -75,17 +96,20 @@ class DataPublisherRegistry(HardwareObject):
         )
 
         if not self._subsribe_task:
-            self._subsribe_task = gevent.spawn(self._subscribe_task)
+            self._subsribe_task = gevent.spawn(self._handle_messages)
 
-    def _subscribe_task(self):
+    def _handle_messages(self):
+        """
+        Listens for published data and handles the data. 
+        """
         pubsub = self._r.pubsub(ignore_subscribe_messages=True)
         pubsub.psubscribe("HWR_DP_NEW_DATA_POINT_*")
 
         _data = {}
 
-        # The descriptions of active publishers for fast access
+        # The descriptions of active sources for fast access
         # while publishing data
-        active_publisher_desc = {}
+        active_source_desc = {}
 
         for message in pubsub.listen():
             if message:
@@ -99,11 +123,16 @@ class DataPublisherRegistry(HardwareObject):
                         _data[redis_channel] = {"x": [], "y": []}
 
                         self._update_description(_id, {"running": True})
+                        
+                        # Clear previous data so that we are not acumelating
+                        # with previously published data
                         self._clear_data(_id)
+
                         self.emit(
                             "start", self.get_description(_id, include_data=True)[0]
                         )
-                        active_publisher_desc[redis_channel] = self._get_description(
+
+                        active_source_desc[redis_channel] = self._get_description(
                             _id
                         )
 
@@ -112,7 +141,7 @@ class DataPublisherRegistry(HardwareObject):
                         self.emit(
                             "end", self.get_description(_id, include_data=True)[0]
                         )
-                        active_publisher_desc.pop(redis_channel)
+                        active_source_desc.pop(redis_channel)
                     elif data["type"] == FrameType.DATA.value:
                         _data[redis_channel] = {
                             "x": _data[redis_channel]["x"] + [data["data"]["x"]],
@@ -120,11 +149,11 @@ class DataPublisherRegistry(HardwareObject):
                         }
 
                         self.emit(
-                            "data", {"id": _id, "data": _data[redis_channel]},
+                            "data", {"id": _id, "data": data["data"]},
                         )
 
                         self._append_data(
-                            _id, data["data"], active_publisher_desc[redis_channel]
+                            _id, data["data"], active_source_desc[redis_channel]
                         )
                     else:
                         msg = "Unknown frame type %s" % message
@@ -133,44 +162,102 @@ class DataPublisherRegistry(HardwareObject):
                     msg = "Could not parse data in %s" % message
                     logging.getLogger("HWR").exception(msg)
 
-    def _subscribe(self, _id):
-        self._add_avilable(_id)
-
-    def _unsubscribe(self, _id):
-        self._remove_available(_id)
-
     def _remove_available(self, _id):
-        publishers = self._get_available()
-        publishers = {} if not publishers else publishers
-        publishers.pop(_id)
+        """
+        Remove source with _id from list of avialable sources
+        
+        Args:
+            _id (str): The id of the source to remove
+        """
+        sources = self._get_available()
+        sources = {} if not sources else sources
+        sources.pop(_id)
 
-        self._r.set("HWR_DP_PUBLISHERS", json.dumps(publishers))
+        self._r.set("HWR_DP_PUBLISHERS", json.dumps(sources))
 
     def _add_avilable(self, _id):
-        publishers = self._get_available()
-        publishers = {} if not publishers else publishers
-        publishers[_id] = "HWR_DP_NEW_DATA_POINT_%s" % _id
+        """
+        Add source with _id to list of avialable sources
 
-        self._r.set("HWR_DP_PUBLISHERS", json.dumps(publishers))
+        Args:
+            _id (str): The id of the sources to remove
+        """
+        sources = self._get_available()
+        sources = {} if not sources else sources
+        sources[_id] = "HWR_DP_NEW_DATA_POINT_%s" % _id
+
+        self._r.set("HWR_DP_PUBLISHERS", json.dumps(sources))
 
     def _get_available(self):
-        publishers = self._r.get("HWR_DP_PUBLISHERS")
-        publishers = json.loads(publishers) if publishers else {}
+        """
+        Returns:
+            (dict): Where the key is the id of source and the value
+                    the channel name to publish data to.
+        """
+        sources = self._r.get("HWR_DP_PUBLISHERS")
+        sources = json.loads(sources) if sources else {}
 
-        return publishers
+        return sources
 
     def _set_description(self, _id, desc):
+        """
+        Sets the description of source with _id to desc
+        
+        Args:
+            _id (str): The id of the source to remove
+            desc (dict): "id": str,
+                         "channel": str,
+                         "name": str,
+                         "data_type": str
+                         "data_dim": float
+                         "plot_type": str
+                         "sample_rate": float
+                         "content_type": str
+                         "range": list (min, max)
+                         "meta": str
+                         "running": boolean,
+        """
         self._r.set("HWR_DP_%s_DESCRIPTION" % _id, json.dumps(desc))
 
     def _get_description(self, _id):
+        """
+        Return the description of source with _id
+
+        Returns:
+            (dict): "id": str,
+                     "channel": str,
+                     "name": str,
+                     "data_type": str
+                     "data_dim": float
+                     "plot_type": str
+                     "sample_rate": float
+                     "content_type": str
+                     "range": list (min, max)
+                     "meta": str
+                     "running": boolean,
+        """
         return json.loads(self._r.get("HWR_DP_%s_DESCRIPTION" % _id))
 
     def _update_description(self, _id, data):
+        """
+        Update the description of source with _id with data
+        Args:
+            _id (str): The id of the source to remove
+            desc (dict): with key, value pairs to update
+        """
         desc = self._get_description(_id)
         desc.update(data)
         self._set_description(_id, desc)
 
     def _append_data(self, _id, data, desc):
+        """
+        Append data to source with _id
+
+        Args:
+            _id (str): The id of the source to remove
+            desc (dict): Publisher description
+            data: x, y, (z) data to append
+        """
         self._r.rpush("HWR_DP_%s_DATA_X" % _id, data.get("x", float("nan")))
         self._r.rpush("HWR_DP_%s_DATA_Y" % _id, data.get("y", float("nan")))
 
@@ -178,6 +265,9 @@ class DataPublisherRegistry(HardwareObject):
             self._r.rpush("HWR_DP_%s_DATA_Z" % _id, data.get("z", float("nan")))
 
     def _clear_data(self, _id):
+        """
+        Clear data of source with _id
+        """
         desc = self._get_description(_id)
 
         self._r.delete("HWR_DP_%s_DATA_X" % _id)
@@ -187,17 +277,25 @@ class DataPublisherRegistry(HardwareObject):
             self._r.delete("HWR_DP_%s_DATA_Z" % _id)
 
     def _publish(self, _id, data):
+        """
+        Publish data to source with _id
+
+        Args:
+            _id (str): The id of the source to remove
+            data: x, y, (z) data to append
+        """
         self._r.publish("HWR_DP_NEW_DATA_POINT_%s" % _id, json.dumps(data))
 
     def register(
         self,
         _id,
-        channel,
         name,
-        data_type,
-        data_dim,
-        plot_type,
-        content_type,
+        channel,
+        axis_labels=["x", "y", "z"],
+        data_type=DataType.FLOAT,
+        data_dim=PlotDim.ONE_D,
+        plot_type=PlotType.SCATTER,
+        content_type="",
         sample_rate=0.5,
         _range=(None, None),
         meta={},
@@ -205,8 +303,9 @@ class DataPublisherRegistry(HardwareObject):
 
         plot_description = {
             "id": _id,
-            "channel": channel,
             "name": name,
+            "axis_labels": axis_labels,
+            "channel": channel,
             "data_type": data_type.value,
             "data_dim": data_dim.value,
             "plot_type": plot_type.value,
@@ -218,7 +317,7 @@ class DataPublisherRegistry(HardwareObject):
         }
 
         self._set_description(_id, plot_description)
-        self._subscribe(_id)
+        self._add_avilable(_id)
 
         return _id
 

@@ -547,12 +547,12 @@ class Beamline(ConfiguredObject):
     __content_roles.append("scan_mockup")
 
     @property
-    def data_publisher_registry(self):
+    def data_publisher(self):
         """
         """
-        return self._objects.get("data_publisher_registry")
+        return self._objects.get("data_publisher")
 
-    __content_roles.append("data_publisher_registry")
+    __content_roles.append("data_publisher")
 
     # NB this is just an example of a globally shared procedure description
     @property

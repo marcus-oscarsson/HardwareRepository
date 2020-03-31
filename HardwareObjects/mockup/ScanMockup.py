@@ -22,7 +22,7 @@ import random
 import ast
 
 from HardwareRepository.BaseHardwareObjects import HardwareObject
-from HardwareRepository.HardwareObjects.DataPublisherRegistry import (
+from HardwareRepository.HardwareObjects.DataPublisher import (
     PlotType,
     PlotDim,
     DataType,
@@ -56,30 +56,29 @@ class ScanMockup(HardwareObject):
         self._min, self._max = ast.literal_eval(self.getProperty("min_max", (0, 10)))
         self._sample_rate = self.getProperty("sample_rate", 0.5)
 
-        HWR.beamline.data_publisher_registry.register(
+        HWR.beamline.data_publisher.register(
             "mockupscan",
+            "MOCK SCAN",
             "diode",
-            "MOCK SCAN",
-            DataType.FLOAT,
-            PlotDim.ONE_D,
-            PlotType.SCATTER,
-            "MOCK SCAN",
+            axis_labels=["time", "counts"],
+            data_type=DataType.FLOAT,
+            data_dim=PlotDim.ONE_D,
+            plot_type=PlotType.SCATTER,
+            content_type="MOCK SCAN",
             sample_rate=self._sample_rate,
             _range=(self._min, self._max),
             meta={},
         )
 
-        # self.start()
-
     def _generate_points(self):
         points = 0
 
-        HWR.beamline.data_publisher_registry.start("mockupscan")
+        HWR.beamline.data_publisher.start("mockupscan")
 
         while points < self._npoints:
             self._current_value = random.uniform(self._min, self._max)
 
-            HWR.beamline.data_publisher_registry.pub(
+            HWR.beamline.data_publisher.pub(
                 "mockupscan",
                 one_d_data(points * self._sample_rate, self._current_value),
             )
@@ -87,7 +86,7 @@ class ScanMockup(HardwareObject):
             gevent.sleep(self._sample_rate)
             points += 1
 
-        HWR.beamline.data_publisher_registry.stop("mockupscan")
+        HWR.beamline.data_publisher.stop("mockupscan")
 
     def start(self):
         """
